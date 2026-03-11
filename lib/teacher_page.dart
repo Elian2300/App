@@ -25,7 +25,7 @@ class _TeacherPageState extends State<TeacherPage> {
   bool   _hayError = false;
 
   // ── Cambia esta URL por la de tu endpoint real ─────────────────────────────
-  static const String _url = 'http://10.0.2.2:3000/api/students';
+  static const String _url = 'http://localhost:3000/api/students';
 
   Future<void> _cargarAlumnos() async {
     setState(() { _cargando = true; _hayError = false; });

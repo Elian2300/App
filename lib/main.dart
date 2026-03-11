@@ -33,7 +33,7 @@ class _LoginPageState extends State<LoginPage> {
   final passwordController = TextEditingController();
 
   Future<void> login() async {
-    final url = Uri.parse("http://10.0.2.2:3000/api/login");
+    final url = Uri.parse("http://localhost:3000/api/login");
 
     final response = await http.post(
       url,
