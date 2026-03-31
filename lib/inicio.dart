@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/http_logger.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'main.dart';
 
 class InicioPage extends StatefulWidget {
@@ -61,11 +64,14 @@ class _AdminPageState extends State<InicioPage> {
               duration: const Duration(milliseconds: 260),
               switchInCurve: Curves.easeOut,
               child: [
-                const _InicioTab(key: ValueKey(0)),
+                _InicioTab(key: const ValueKey(0), onNavigate: (i) => setState(() => _selectedTab = i)),
                 const _MaestrosTab(key: ValueKey(1)),
                 const _AlumnosTab(key: ValueKey(2)),
                 const _AulasTab(key: ValueKey(3)),
                 const _HorariosTab(key: ValueKey(4)),
+                const _UsuariosTab(key: ValueKey(5)),
+                const _MateriasTab(key: ValueKey(6)),
+                const _InscripcionesTab(key: ValueKey(7)),
               ][_selectedTab],
             ),
           ),
@@ -78,11 +84,48 @@ class _AdminPageState extends State<InicioPage> {
 // ─────────────────────────────────────────────────────────────────────────────
 // HEADER — muestra widget.role
 // ─────────────────────────────────────────────────────────────────────────────
-class _Header extends StatelessWidget {
+class _Header extends StatefulWidget {
   final String role;
   final VoidCallback onLogout;
 
   const _Header({required this.role, required this.onLogout});
+
+  @override
+  State<_Header> createState() => _HeaderState();
+}
+
+class _HeaderState extends State<_Header> {
+  int _maestrosCount = 0;
+  int _alumnosCount = 0;
+  int _aulasCount = 0;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCounts();
+  }
+
+  Future<void> _fetchCounts() async {
+    try {
+      final futures = await Future.wait([
+        http.get(Uri.parse('${dotenv.env['API_URL']}/api/teachers')),
+        http.get(Uri.parse('${dotenv.env['API_URL']}/api/students')),
+        http.get(Uri.parse('${dotenv.env['API_URL']}/api/groups')),
+      ]);
+      
+      if (mounted) {
+        setState(() {
+          if (futures[0].statusCode == 200) _maestrosCount = jsonDecode(futures[0].body).length;
+          if (futures[1].statusCode == 200) _alumnosCount = jsonDecode(futures[1].body).length;
+          if (futures[2].statusCode == 200) _aulasCount = jsonDecode(futures[2].body).length;
+          _isLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -127,9 +170,8 @@ class _Header extends StatelessWidget {
                           letterSpacing: 0.4,
                         ),
                       ),
-                      // ← role original sin mover
                       Text(
-                        role,
+                        widget.role,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 18,
@@ -140,9 +182,8 @@ class _Header extends StatelessWidget {
                     ],
                   ),
                   const Spacer(),
-                  // Botón cerrar sesión
                   GestureDetector(
-                    onTap: onLogout,
+                    onTap: widget.onLogout,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 8),
@@ -171,13 +212,13 @@ class _Header extends StatelessWidget {
               const SizedBox(height: 20),
               Row(
                 children: [
-                  _StatPill(Icons.person_rounded, '24 Maestros',
+                  _StatPill(Icons.person_rounded, _isLoading ? '...' : '$_maestrosCount Maestros',
                       const Color(0xFF4FC3F7)),
                   const SizedBox(width: 10),
-                  _StatPill(Icons.people_rounded, '320 Alumnos',
+                  _StatPill(Icons.people_rounded, _isLoading ? '...' : '$_alumnosCount Alumnos',
                       const Color(0xFF81C784)),
                   const SizedBox(width: 10),
-                  _StatPill(Icons.meeting_room_rounded, '12 Aulas',
+                  _StatPill(Icons.meeting_room_rounded, _isLoading ? '...' : '$_aulasCount Aulas',
                       const Color(0xFFFFB74D)),
                 ],
               ),
@@ -234,6 +275,9 @@ class _CustomTabBar extends StatelessWidget {
     ('Alumnos',  Icons.people_rounded),
     ('Aulas',    Icons.meeting_room_rounded),
     ('Horarios', Icons.schedule_rounded),
+    ('Usuarios', Icons.admin_panel_settings_rounded),
+    ('Materias', Icons.menu_book_rounded),
+    ('Inscrip.', Icons.assignment_ind_rounded),
   ];
 
   @override
@@ -252,15 +296,19 @@ class _CustomTabBar extends StatelessWidget {
               offset: const Offset(0, 4)),
         ],
       ),
-      child: Row(
-        children: List.generate(_tabs.length, (i) {
-          final sel = selected == i;
-          return Expanded(
-            child: GestureDetector(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        child: Row(
+          children: List.generate(_tabs.length, (i) {
+            final sel = selected == i;
+            return GestureDetector(
               onTap: () => onTap(i),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOut,
+                width: 76,
+                margin: const EdgeInsets.symmetric(horizontal: 2),
                 decoration: BoxDecoration(
                   color: sel ? const Color(0xFF1A1A2E) : Colors.transparent,
                   borderRadius: BorderRadius.circular(12),
@@ -276,7 +324,7 @@ class _CustomTabBar extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(_tabs[i].$1,
                         style: TextStyle(
-                            fontSize: 9,
+                            fontSize: 10,
                             fontWeight: FontWeight.w700,
                             color: sel
                                 ? Colors.white
@@ -284,9 +332,9 @@ class _CustomTabBar extends StatelessWidget {
                   ],
                 ),
               ),
-            ),
-          );
-        }),
+            );
+          }),
+        ),
       ),
     );
   }
@@ -296,7 +344,8 @@ class _CustomTabBar extends StatelessWidget {
 // TAB 0 — INICIO
 // ─────────────────────────────────────────────────────────────────────────────
 class _InicioTab extends StatelessWidget {
-  const _InicioTab({super.key});
+  final ValueChanged<int> onNavigate;
+  const _InicioTab({super.key, required this.onNavigate});
 
   @override
   Widget build(BuildContext context) {
@@ -362,7 +411,7 @@ class _InicioTab extends StatelessWidget {
             mainAxisSpacing: 14,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            childAspectRatio: 1.1,
+            childAspectRatio: 1.0,
             children: [
               _AccionCard(
                 icon: Icons.manage_accounts_rounded,
@@ -370,7 +419,7 @@ class _InicioTab extends StatelessWidget {
                 subtitle: 'Administrar cuentas',
                 colorA: const Color(0xFF4FC3F7),
                 colorB: const Color(0xFF0288D1),
-                onPressed: () {},              // ← onPressed original
+                onPressed: () => onNavigate(5),              // ← navigate to Usuarios
               ),
               _AccionCard(
                 icon: Icons.add_circle_rounded,
@@ -378,7 +427,7 @@ class _InicioTab extends StatelessWidget {
                 subtitle: 'Nueva clase',
                 colorA: const Color(0xFF81C784),
                 colorB: const Color(0xFF388E3C),
-                onPressed: () {},              // ← onPressed original
+                onPressed: () => onNavigate(6),              // ← navigate to Materias
               ),
               _AccionCard(
                 icon: Icons.meeting_room_rounded,
@@ -386,15 +435,15 @@ class _InicioTab extends StatelessWidget {
                 subtitle: 'Gestionar espacios',
                 colorA: const Color(0xFFFFB74D),
                 colorB: const Color(0xFFF57C00),
-                onPressed: () {},              // ← onPressed original
+                onPressed: () => onNavigate(7),              // ← navigate to Inscripciones
               ),
               _AccionCard(
                 icon: Icons.fact_check_rounded,
-                title: 'Ver asistencia',        // ← original
-                subtitle: 'Revisar registros',
+                title: 'Ver horarios',        // ← changed
+                subtitle: 'Revisar maestros',
                 colorA: const Color(0xFFE94560),
                 colorB: const Color(0xFFB71C1C),
-                onPressed: () {},              // ← onPressed original
+                onPressed: () => onNavigate(4),              // ← navigate to Horarios
               ),
             ],
           ),
@@ -491,20 +540,20 @@ class _AccionCard extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    width: 44,
-                    height: 44,
+                    width: 40,
+                    height: 40,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                           colors: [colorA, colorB],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight),
-                      borderRadius: BorderRadius.circular(13),
+                      borderRadius: BorderRadius.circular(12),
                       boxShadow: [
                         BoxShadow(
                             color: colorA.withOpacity(0.3),
@@ -512,17 +561,25 @@ class _AccionCard extends StatelessWidget {
                             offset: const Offset(0, 4))
                       ],
                     ),
-                    child: Icon(icon, color: Colors.white, size: 22),
+                    child: Icon(icon, color: Colors.white, size: 20),
                   ),
+                  const SizedBox(height: 12),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(title,
+                          maxLines: 1,
+                          overflow: TextOverflow.fade,
+                          softWrap: false,
                           style: const TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 13,
                               color: Color(0xFF1A1A2E))),
+                      const SizedBox(height: 2),
                       Text(subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.fade,
+                          softWrap: false,
                           style: const TextStyle(
                               fontSize: 10,
                               color: Color(0xFF8A93A8),
@@ -610,17 +667,80 @@ class _ActividadItem extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 1 — MAESTROS
 // ─────────────────────────────────────────────────────────────────────────────
-class _MaestrosTab extends StatelessWidget {
+class _MaestrosTab extends StatefulWidget {
   const _MaestrosTab({super.key});
 
-  static const _maestros = [
-    _PersonaData('Carlos García',  'Matemáticas', 'carlos@escuela.edu.mx', '3°A, 2°B', Color(0xFF4FC3F7)),
-    _PersonaData('Ana Ramírez',    'Español',     'ana@escuela.edu.mx',    '1°A, 1°B', Color(0xFF81C784)),
-    _PersonaData('Roberto López',  'Ciencias',    'roberto@escuela.edu.mx','2°A, 3°B', Color(0xFFFFB74D)),
-    _PersonaData('María Torres',   'Historia',    'maria@escuela.edu.mx',  '1°C, 2°C', Color(0xFFE94560)),
-    _PersonaData('John Smith',     'Inglés',      'john@escuela.edu.mx',   '3°A, 3°B', Color(0xFF9575CD)),
-    _PersonaData('Luis Morales',   'Ed. Física',  'luis@escuela.edu.mx',   'Todos',    Color(0xFF4DB6AC)),
-  ];
+  @override
+  State<_MaestrosTab> createState() => _MaestrosTabState();
+}
+
+class _MaestrosTabState extends State<_MaestrosTab> {
+  List<_PersonaData> _maestros = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchMaestros();
+  }
+
+  Future<void> _fetchMaestros() async {
+    try {
+      final res = await http.get(Uri.parse('${dotenv.env['API_URL']}/api/teachers'));
+      if (res.statusCode == 200) {
+        final List data = jsonDecode(res.body);
+        setState(() {
+          _maestros = data.map((json) {
+            return _PersonaData(
+              json['_id'] ?? '',
+              "${json['nombre']} ${json['apellido']}",
+              json['especialidad'] ?? 'Sin asignar',
+              json['email'] ?? 'N/A',
+              'Todos',
+              const Color(0xFF4FC3F7),
+            );
+          }).toList();
+          _isLoading = false;
+        });
+      } else {
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _eliminarMaestro(String id) async {
+    try {
+      await http.delete(Uri.parse('${dotenv.env['API_URL']}/api/teachers/$id'));
+      _fetchMaestros();
+    } catch (_) {}
+  }
+
+  void _abrirCrearMaestro() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.45),
+      builder: (_) => _CrearMaestroModal(
+        onGuardar: () => _fetchMaestros(),
+      ),
+    );
+  }
+
+  void _abrirEditarMaestro(_PersonaData maestro) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.45),
+      builder: (_) => _CrearMaestroModal(
+        personaActual: maestro,
+        onGuardar: () => _fetchMaestros(),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -636,7 +756,7 @@ class _MaestrosTab extends StatelessWidget {
                       fontWeight: FontWeight.w800,
                       color: Color(0xFF1A1A2E))),
               const Spacer(),
-              _AddButton(label: 'Agregar', onTap: () {}),
+              _AddButton(label: 'Agregar', onTap: _abrirCrearMaestro),
             ],
           ),
         ),
@@ -651,13 +771,20 @@ class _MaestrosTab extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
-            physics: const BouncingScrollPhysics(),
-            itemCount: _maestros.length,
-            itemBuilder: (_, i) =>
-                _MaestroCard(data: _maestros[i]),
-          ),
+          child: _isLoading 
+            ? const Center(child: CircularProgressIndicator()) 
+            : _maestros.isEmpty 
+              ? const Center(child: Text("No hay maestros", style: TextStyle(color: Color(0xFF8A93A8))))
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: _maestros.length,
+                  itemBuilder: (_, i) => _MaestroCard(
+                    data: _maestros[i],
+                    onEdit: () => _abrirEditarMaestro(_maestros[i]),
+                    onDelete: () => _eliminarMaestro(_maestros[i].id),
+                  ),
+                ),
         ),
       ],
     );
@@ -665,18 +792,21 @@ class _MaestrosTab extends StatelessWidget {
 }
 
 class _PersonaData {
+  final String id;
   final String nombre;
   final String materia;
   final String correo;
   final String grupos;
   final Color color;
   const _PersonaData(
-      this.nombre, this.materia, this.correo, this.grupos, this.color);
+      this.id, this.nombre, this.materia, this.correo, this.grupos, this.color);
 }
 
 class _MaestroCard extends StatelessWidget {
   final _PersonaData data;
-  const _MaestroCard({required this.data});
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  const _MaestroCard({required this.data, required this.onEdit, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -749,10 +879,10 @@ class _MaestroCard extends StatelessWidget {
                 Column(
                   children: [
                     _IconBtn(Icons.edit_rounded,
-                        const Color(0xFF4FC3F7), () {}),
+                        const Color(0xFF4FC3F7), onEdit),
                     const SizedBox(height: 6),
                     _IconBtn(Icons.delete_rounded,
-                        const Color(0xFFE94560), () {}),
+                        const Color(0xFFE94560), onDelete),
                   ],
                 ),
               ],
@@ -767,17 +897,80 @@ class _MaestroCard extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 2 — ALUMNOS
 // ─────────────────────────────────────────────────────────────────────────────
-class _AlumnosTab extends StatelessWidget {
+class _AlumnosTab extends StatefulWidget {
   const _AlumnosTab({super.key});
 
-  static const _alumnos = [
-    _PersonaData('Ana Pérez',    '3°A', 'Matrícula: ALU-001', '9.5', Color(0xFF4FC3F7)),
-    _PersonaData('Luis Méndez', '3°A', 'Matrícula: ALU-002', '8.8', Color(0xFF81C784)),
-    _PersonaData('Sofía Castro','2°B', 'Matrícula: ALU-003', '9.2', Color(0xFFFFB74D)),
-    _PersonaData('Diego Ruiz',  '1°C', 'Matrícula: ALU-004', '7.5', Color(0xFFE94560)),
-    _PersonaData('Valeria Soto','2°A', 'Matrícula: ALU-005', '9.8', Color(0xFF9575CD)),
-    _PersonaData('Carlos Vega', '3°B', 'Matrícula: ALU-006', '8.0', Color(0xFF4DB6AC)),
-  ];
+  @override
+  State<_AlumnosTab> createState() => _AlumnosTabState();
+}
+
+class _AlumnosTabState extends State<_AlumnosTab> {
+  List<_PersonaData> _alumnos = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAlumnos();
+  }
+
+  Future<void> _fetchAlumnos() async {
+    try {
+      final res = await http.get(Uri.parse('${dotenv.env['API_URL']}/api/students'));
+      if (res.statusCode == 200) {
+        final List data = jsonDecode(res.body);
+        setState(() {
+          _alumnos = data.map((json) {
+            return _PersonaData(
+              json['_id'] ?? '',
+              "${json['nombre']} ${json['apellido']}",
+              "Cuatrimestre ${json['cuatrimestre'] ?? 1}",
+              "Matrícula: ${json['matricula']}",
+              "9.0", // mock calificacion
+              const Color(0xFF81C784),
+            );
+          }).toList();
+          _isLoading = false;
+        });
+      } else {
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _eliminarAlumno(String id) async {
+    try {
+      await http.delete(Uri.parse('${dotenv.env['API_URL']}/api/students/$id'));
+      _fetchAlumnos();
+    } catch (_) {}
+  }
+
+  void _abrirCrearAlumno() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.45),
+      builder: (_) => _CrearAlumnoModal(
+        onGuardar: () => _fetchAlumnos(),
+      ),
+    );
+  }
+
+  void _abrirEditarAlumno(_PersonaData alumno) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.45),
+      builder: (_) => _CrearAlumnoModal(
+        personaActual: alumno,
+        onGuardar: () => _fetchAlumnos(),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -793,7 +986,7 @@ class _AlumnosTab extends StatelessWidget {
                       fontWeight: FontWeight.w800,
                       color: Color(0xFF1A1A2E))),
               const Spacer(),
-              _AddButton(label: 'Agregar', onTap: () {}),
+              _AddButton(label: 'Agregar', onTap: _abrirCrearAlumno),
             ],
           ),
         ),
@@ -804,13 +997,20 @@ class _AlumnosTab extends StatelessWidget {
                   color: Color(0xFF8A93A8), fontSize: 12)),
         ),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
-            physics: const BouncingScrollPhysics(),
-            itemCount: _alumnos.length,
-            itemBuilder: (_, i) =>
-                _AlumnoCard(data: _alumnos[i]),
-          ),
+          child: _isLoading 
+            ? const Center(child: CircularProgressIndicator()) 
+            : _alumnos.isEmpty 
+              ? const Center(child: Text("No hay alumnos registrados", style: TextStyle(color: Color(0xFF8A93A8))))
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: _alumnos.length,
+                  itemBuilder: (_, i) => _AlumnoCard(
+                    data: _alumnos[i],
+                    onEdit: () => _abrirEditarAlumno(_alumnos[i]),
+                    onDelete: () => _eliminarAlumno(_alumnos[i].id),
+                  ),
+                ),
         ),
       ],
     );
@@ -819,7 +1019,9 @@ class _AlumnosTab extends StatelessWidget {
 
 class _AlumnoCard extends StatelessWidget {
   final _PersonaData data;
-  const _AlumnoCard({required this.data});
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  const _AlumnoCard({required this.data, required this.onEdit, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -891,10 +1093,10 @@ class _AlumnoCard extends StatelessWidget {
                 Column(
                   children: [
                     _IconBtn(Icons.edit_rounded,
-                        const Color(0xFF4FC3F7), () {}),
+                        const Color(0xFF4FC3F7), onEdit),
                     const SizedBox(height: 6),
                     _IconBtn(Icons.delete_rounded,
-                        const Color(0xFFE94560), () {}),
+                        const Color(0xFFE94560), onDelete),
                   ],
                 ),
               ],
@@ -917,14 +1119,47 @@ class _AulasTab extends StatefulWidget {
 }
 
 class _AulasTabState extends State<_AulasTab> {
-  final _aulas = [
-    _AulaData('Salón 101',    'Planta Baja', 35,  'Matemáticas',  true),
-    _AulaData('Salón 102',    'Planta Baja', 30,  'Español',      false),
-    _AulaData('Salón 201',    'Primer Piso', 40,  'Ciencias',     true),
-    _AulaData('Salón 202',    'Primer Piso', 35,  'Historia',     false),
-    _AulaData('Lab. Cómputo', 'Planta Baja', 25,  'Computación',  true),
-    _AulaData('Gimnasio',     'Exterior',    100, 'Ed. Física',   true),
-  ];
+  List<_AulaData> _aulas = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAulas();
+  }
+
+  Future<void> _fetchAulas() async {
+    try {
+      final res = await http.get(Uri.parse('${dotenv.env['API_URL']}/api/groups'));
+      if (res.statusCode == 200) {
+        final List data = jsonDecode(res.body);
+        setState(() {
+          _aulas = data.map((json) {
+            return _AulaData(
+              json['_id'] ?? '',
+              json['classroom'] ?? 'Sin Aula',
+              "Periodo ${json['period'] ?? 'N/A'}",
+              json['capacity'] ?? 30,
+              json['groupCode'] ?? 'General',
+              json['isActive'] ?? true,
+            );
+          }).toList();
+          _isLoading = false;
+        });
+      } else {
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _eliminarAula(String id) async {
+    try {
+      await http.delete(Uri.parse('${dotenv.env['API_URL']}/api/groups/$id'));
+      _fetchAulas();
+    } catch (_) {}
+  }
 
   void _abrirCrearAula() {
     showModalBottomSheet(
@@ -933,7 +1168,20 @@ class _AulasTabState extends State<_AulasTab> {
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withOpacity(0.45),
       builder: (_) => _CrearAulaModal(
-        onGuardar: (aula) => setState(() => _aulas.add(aula)),
+        onGuardar: (aula) => _fetchAulas(),
+      ),
+    );
+  }
+
+  void _abrirEditarAula(_AulaData aula) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.45),
+      builder: (_) => _CrearAulaModal(
+        aulaActual: aula,
+        onGuardar: (updated) => _fetchAulas(),
       ),
     );
   }
@@ -964,12 +1212,20 @@ class _AulasTabState extends State<_AulasTab> {
                   color: Color(0xFF8A93A8), fontSize: 12)),
         ),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
-            physics: const BouncingScrollPhysics(),
-            itemCount: _aulas.length,
-            itemBuilder: (_, i) => _AulaCard(data: _aulas[i]),
-          ),
+          child: _isLoading 
+            ? const Center(child: CircularProgressIndicator()) 
+            : _aulas.isEmpty 
+              ? const Center(child: Text("No hay aulas registradas", style: TextStyle(color: Color(0xFF8A93A8))))
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: _aulas.length,
+                  itemBuilder: (_, i) => _AulaCard(
+                    data: _aulas[i],
+                    onEdit: () => _abrirEditarAula(_aulas[i]),
+                    onDelete: () => _eliminarAula(_aulas[i].id),
+                  ),
+                ),
         ),
       ],
     );
@@ -977,18 +1233,21 @@ class _AulasTabState extends State<_AulasTab> {
 }
 
 class _AulaData {
+  final String id;
   final String nombre;
   final String ubicacion;
   final int capacidad;
   final String materia;
   final bool disponible;
-  _AulaData(this.nombre, this.ubicacion, this.capacidad,
+  _AulaData(this.id, this.nombre, this.ubicacion, this.capacidad,
       this.materia, this.disponible);
 }
 
 class _AulaCard extends StatelessWidget {
   final _AulaData data;
-  const _AulaCard({required this.data});
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  const _AulaCard({required this.data, required this.onEdit, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -1061,7 +1320,10 @@ class _AulaCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 _IconBtn(Icons.edit_rounded,
-                    const Color(0xFF4FC3F7), () {}),
+                    const Color(0xFF4FC3F7), onEdit),
+                const SizedBox(height: 6),
+                _IconBtn(Icons.delete_rounded,
+                    const Color(0xFFE94560), onDelete),
               ],
             ),
           ],
@@ -1082,12 +1344,49 @@ class _HorariosTab extends StatefulWidget {
 }
 
 class _HorariosTabState extends State<_HorariosTab> {
-  final _horarios = [
-    _HorarioData('Prof. García',  'Matemáticas', 'Salón 101', 'Lun / Mié / Vie', '08:00 – 09:30', Color(0xFF4FC3F7)),
-    _HorarioData('Prof. Ramírez', 'Español',     'Salón 102', 'Mar / Jue',       '07:00 – 08:30', Color(0xFF81C784)),
-    _HorarioData('Prof. López',   'Ciencias',    'Salón 201', 'Lun / Jue',       '10:00 – 11:30', Color(0xFFFFB74D)),
-    _HorarioData('Prof. Torres',  'Historia',    'Salón 202', 'Mar / Vie',       '11:00 – 12:30', Color(0xFF9575CD)),
-  ];
+  List<_HorarioData> _horarios = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchHorarios();
+  }
+
+  Future<void> _fetchHorarios() async {
+    try {
+      final res = await http.get(Uri.parse('${dotenv.env['API_URL']}/api/schedules'));
+      if (res.statusCode == 200) {
+        final List data = jsonDecode(res.body);
+        setState(() {
+          _horarios = data.map((json) {
+            String diaStr = "Día ${json['dayOfWeek'] ?? 1}";
+            return _HorarioData(
+              json['_id'] ?? '',
+              'Profesor', // Mock teacher
+              'Materia',  // Mock subject
+              json['classroom'] ?? 'Aula',
+              diaStr,
+              "${json['startTime']} - ${json['endTime']}",
+              const Color(0xFF4FC3F7),
+            );
+          }).toList();
+          _isLoading = false;
+        });
+      } else {
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _eliminarHorario(String id) async {
+    try {
+      await http.delete(Uri.parse('${dotenv.env['API_URL']}/api/schedules/$id'));
+      _fetchHorarios();
+    } catch (_) {}
+  }
 
   void _abrirCrearHorario() {
     showModalBottomSheet(
@@ -1095,7 +1394,22 @@ class _HorariosTabState extends State<_HorariosTab> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withOpacity(0.45),
-      builder: (_) => const _CrearHorarioModal(),
+      builder: (_) => _CrearHorarioModal(
+        onGuardar: () => _fetchHorarios(),
+      ),
+    );
+  }
+
+  void _abrirEditarHorario(_HorarioData horario) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.45),
+      builder: (_) => _CrearHorarioModal(
+        horarioActual: horario,
+        onGuardar: () => _fetchHorarios(),
+      ),
     );
   }
 
@@ -1126,13 +1440,20 @@ class _HorariosTabState extends State<_HorariosTab> {
                   color: Color(0xFF8A93A8), fontSize: 12)),
         ),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
-            physics: const BouncingScrollPhysics(),
-            itemCount: _horarios.length,
-            itemBuilder: (_, i) =>
-                _HorarioCard(data: _horarios[i]),
-          ),
+          child: _isLoading 
+            ? const Center(child: CircularProgressIndicator()) 
+            : _horarios.isEmpty 
+              ? const Center(child: Text("No hay horarios asignados", style: TextStyle(color: Color(0xFF8A93A8))))
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: _horarios.length,
+                  itemBuilder: (_, i) => _HorarioCard(
+                    data: _horarios[i],
+                    onEdit: () => _abrirEditarHorario(_horarios[i]),
+                    onDelete: () => _eliminarHorario(_horarios[i].id),
+                  ),
+                ),
         ),
       ],
     );
@@ -1140,19 +1461,22 @@ class _HorariosTabState extends State<_HorariosTab> {
 }
 
 class _HorarioData {
+  final String id;
   final String profesor;
   final String materia;
   final String aula;
   final String dias;
   final String horario;
   final Color color;
-  const _HorarioData(this.profesor, this.materia, this.aula,
+  const _HorarioData(this.id, this.profesor, this.materia, this.aula,
       this.dias, this.horario, this.color);
 }
 
 class _HorarioCard extends StatelessWidget {
   final _HorarioData data;
-  const _HorarioCard({required this.data});
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  const _HorarioCard({required this.data, required this.onEdit, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -1212,11 +1536,266 @@ class _HorarioCard extends StatelessWidget {
             Column(
               children: [
                 _IconBtn(Icons.edit_rounded,
-                    const Color(0xFF4FC3F7), () {}),
+                    const Color(0xFF4FC3F7), onEdit),
                 const SizedBox(height: 6),
                 _IconBtn(Icons.delete_rounded,
-                    const Color(0xFFE94560), () {}),
+                    const Color(0xFFE94560), onDelete),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODAL: CREAR ESTUDIANTE Y MAESTRO
+// ─────────────────────────────────────────────────────────────────────────────
+class _CrearMaestroModal extends StatefulWidget {
+  final _PersonaData? personaActual;
+  final VoidCallback onGuardar;
+  const _CrearMaestroModal({this.personaActual, required this.onGuardar});
+
+  @override
+  State<_CrearMaestroModal> createState() => _CrearMaestroModalState();
+}
+
+class _CrearMaestroModalState extends State<_CrearMaestroModal> {
+  final _nombreCtrl = TextEditingController();
+  final _apellidoCtrl = TextEditingController();
+  final _numCtrl = TextEditingController();
+  final _espCtrl = TextEditingController();
+  bool _guardando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.personaActual != null) {
+      final parts = widget.personaActual!.nombre.split(' ');
+      _nombreCtrl.text = parts.isNotEmpty ? parts[0] : '';
+      _apellidoCtrl.text = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+      _espCtrl.text = widget.personaActual!.materia;
+    }
+  }
+
+  void _guardar() async {
+    if (_nombreCtrl.text.isEmpty || _apellidoCtrl.text.isEmpty) return;
+    setState(() => _guardando = true);
+    try {
+      final isEdit = widget.personaActual != null;
+      final url = isEdit
+          ? '${dotenv.env['API_URL']}/api/teachers/${widget.personaActual!.id}'
+          : '${dotenv.env['API_URL']}/api/teachers';
+      final request = isEdit ? http.put : http.post;
+
+      await request(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'nombre': _nombreCtrl.text,
+          'apellido': _apellidoCtrl.text,
+          'numeroEmpleado': _numCtrl.text.isEmpty ? 'N/A' : _numCtrl.text,
+          'especialidad': _espCtrl.text.isEmpty ? 'General' : _espCtrl.text,
+        }),
+      );
+    } catch (_) {}
+    widget.onGuardar();
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      padding: EdgeInsets.fromLTRB(24, 12, 24, 24 + bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(color: const Color(0xFFE0E8F0), borderRadius: BorderRadius.circular(4)),
+              ),
+            ),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: const Color(0xFF4FC3F7).withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.person_add_rounded, color: Color(0xFF4FC3F7), size: 22),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.personaActual == null ? 'Nuevo Maestro' : 'Editar Maestro', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1A1A2E))),
+                    Text(widget.personaActual == null ? 'Registra un nuevo docente' : 'Modifica los datos del docente', style: const TextStyle(fontSize: 12, color: Color(0xFF8A93A8))),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _ModalField(controller: _nombreCtrl, label: 'Nombre', hint: 'Ej. Juan', icon: Icons.person_outline),
+            const SizedBox(height: 12),
+            _ModalField(controller: _apellidoCtrl, label: 'Apellidos', hint: 'Ej. Pérez', icon: Icons.person_outline),
+            const SizedBox(height: 12),
+            _ModalField(controller: _numCtrl, label: 'Num. Empleado', hint: 'Ej. M-1020', icon: Icons.badge_outlined),
+            const SizedBox(height: 12),
+            _ModalField(controller: _espCtrl, label: 'Especialidad', hint: 'Ej. Matemáticas', icon: Icons.school_outlined),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _guardando ? null : _guardar,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1A1A2E),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 0,
+                ),
+                child: _guardando
+                    ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : Text(widget.personaActual == null ? 'Guardar Maestro' : 'Actualizar Maestro', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CrearAlumnoModal extends StatefulWidget {
+  final _PersonaData? personaActual;
+  final VoidCallback onGuardar;
+  const _CrearAlumnoModal({this.personaActual, required this.onGuardar});
+
+  @override
+  State<_CrearAlumnoModal> createState() => _CrearAlumnoModalState();
+}
+
+class _CrearAlumnoModalState extends State<_CrearAlumnoModal> {
+  final _nombreCtrl = TextEditingController();
+  final _apellidoCtrl = TextEditingController();
+  final _matriculaCtrl = TextEditingController();
+  final _carreraCtrl = TextEditingController();
+  final _cuatrimestreCtrl = TextEditingController();
+  bool _guardando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.personaActual != null) {
+      final parts = widget.personaActual!.nombre.split(' ');
+      _nombreCtrl.text = parts.isNotEmpty ? parts[0] : '';
+      _apellidoCtrl.text = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+      
+      final cuatriStr = widget.personaActual!.materia.replaceAll(RegExp(r'[^0-9]'), '');
+      _cuatrimestreCtrl.text = cuatriStr;
+    }
+  }
+
+  void _guardar() async {
+    if (_nombreCtrl.text.isEmpty || _apellidoCtrl.text.isEmpty) return;
+    setState(() => _guardando = true);
+    try {
+      final isEdit = widget.personaActual != null;
+      final url = isEdit
+          ? '${dotenv.env['API_URL']}/api/students/${widget.personaActual!.id}'
+          : '${dotenv.env['API_URL']}/api/students';
+      final request = isEdit ? http.put : http.post;
+
+      await request(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'nombre': _nombreCtrl.text,
+          'apellido': _apellidoCtrl.text,
+          'matricula': _matriculaCtrl.text.isEmpty ? 'N/A' : _matriculaCtrl.text,
+          'carrera': _carreraCtrl.text.isEmpty ? 'General' : _carreraCtrl.text,
+          'cuatrimestre': int.tryParse(_cuatrimestreCtrl.text) ?? 1,
+        }),
+      );
+    } catch (_) {}
+    widget.onGuardar();
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      padding: EdgeInsets.fromLTRB(24, 12, 24, 24 + bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(color: const Color(0xFFE0E8F0), borderRadius: BorderRadius.circular(4)),
+              ),
+            ),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: const Color(0xFF81C784).withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.school_rounded, color: Color(0xFF81C784), size: 22),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.personaActual == null ? 'Nuevo Alumno' : 'Editar Alumno', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1A1A2E))),
+                    Text(widget.personaActual == null ? 'Registra un estudiante' : 'Modifica los datos del estudiante', style: const TextStyle(fontSize: 12, color: Color(0xFF8A93A8))),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(child: _ModalField(controller: _nombreCtrl, label: 'Nombre', hint: 'Ej. María', icon: Icons.person_outline)),
+                const SizedBox(width: 12),
+                Expanded(child: _ModalField(controller: _apellidoCtrl, label: 'Apellido', hint: 'Ej. López', icon: Icons.person_outline)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _ModalField(controller: _matriculaCtrl, label: 'Matrícula', hint: 'Ej. 19100123', icon: Icons.badge_outlined),
+            const SizedBox(height: 12),
+            _ModalField(controller: _carreraCtrl, label: 'Carrera', hint: 'Ej. Ingeniería', icon: Icons.book_outlined),
+            const SizedBox(height: 12),
+            _ModalField(controller: _cuatrimestreCtrl, label: 'Cuatrimestre', hint: 'Ej. 3', icon: Icons.format_list_numbered_outlined),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _guardando ? null : _guardar,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1A1A2E),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 0,
+                ),
+                child: _guardando
+                    ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : Text(widget.personaActual == null ? 'Guardar Alumno' : 'Actualizar Alumno', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+              ),
             ),
           ],
         ),
@@ -1229,8 +1808,9 @@ class _HorarioCard extends StatelessWidget {
 // MODAL: CREAR AULA
 // ─────────────────────────────────────────────────────────────────────────────
 class _CrearAulaModal extends StatefulWidget {
+  final _AulaData? aulaActual;
   final void Function(_AulaData) onGuardar;
-  const _CrearAulaModal({required this.onGuardar});
+  const _CrearAulaModal({this.aulaActual, required this.onGuardar});
 
   @override
   State<_CrearAulaModal> createState() => _CrearAulaModalState();
@@ -1244,6 +1824,17 @@ class _CrearAulaModalState extends State<_CrearAulaModal> {
   bool _guardando = false;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.aulaActual != null) {
+      _nombreCtrl.text = widget.aulaActual!.nombre;
+      _ubicacionCtrl.text = widget.aulaActual!.ubicacion.replaceFirst('Periodo ', '');
+      _capCtrl.text = widget.aulaActual!.capacidad.toString();
+      _materiaCtrl.text = widget.aulaActual!.materia;
+    }
+  }
+
+  @override
   void dispose() {
     _nombreCtrl.dispose();
     _ubicacionCtrl.dispose();
@@ -1255,14 +1846,25 @@ class _CrearAulaModalState extends State<_CrearAulaModal> {
   void _guardar() async {
     if (_nombreCtrl.text.isEmpty) return;
     setState(() => _guardando = true);
-    await Future.delayed(const Duration(milliseconds: 800));
-    widget.onGuardar(_AulaData(
-      _nombreCtrl.text,
-      _ubicacionCtrl.text.isEmpty ? 'Sin ubicación' : _ubicacionCtrl.text,
-      int.tryParse(_capCtrl.text) ?? 0,
-      _materiaCtrl.text.isEmpty ? 'General' : _materiaCtrl.text,
-      true,
-    ));
+    try {
+      final isEdit = widget.aulaActual != null;
+      final url = isEdit
+          ? '${dotenv.env['API_URL']}/api/groups/${widget.aulaActual!.id}'
+          : '${dotenv.env['API_URL']}/api/groups';
+      final request = isEdit ? http.put : http.post;
+
+      await request(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'classroom': _nombreCtrl.text,
+          'capacity': int.tryParse(_capCtrl.text) ?? 30,
+          'groupCode': _materiaCtrl.text.isEmpty ? 'General' : _materiaCtrl.text,
+          'period': _ubicacionCtrl.text.isEmpty ? 'Actual' : _ubicacionCtrl.text,
+        }),
+      );
+    } catch (_) {}
+    widget.onGuardar(_AulaData('', '', '', 0, '', true));
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -1300,16 +1902,16 @@ class _CrearAulaModalState extends State<_CrearAulaModal> {
                       color: Color(0xFFFFB74D), size: 22),
                 ),
                 const SizedBox(width: 12),
-                const Column(
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Nueva Aula',
-                        style: TextStyle(
+                    Text(widget.aulaActual == null ? 'Nueva Aula' : 'Editar Aula',
+                        style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
                             color: Color(0xFF1A1A2E))),
-                    Text('Registra un nuevo espacio',
-                        style: TextStyle(
+                    Text(widget.aulaActual == null ? 'Registra un nuevo espacio' : 'Modifica los datos del aula',
+                        style: const TextStyle(
                             fontSize: 12, color: Color(0xFF8A93A8))),
                   ],
                 ),
@@ -1338,7 +1940,7 @@ class _CrearAulaModalState extends State<_CrearAulaModal> {
                 icon: Icons.menu_book_outlined),
             const SizedBox(height: 24),
             _BotonGuardar(
-              label: 'Crear Aula',
+              label: widget.aulaActual == null ? 'Crear Aula' : 'Actualizar Aula',
               color: const Color(0xFFFFB74D),
               guardando: _guardando,
               onTap: _guardar,
@@ -1354,7 +1956,9 @@ class _CrearAulaModalState extends State<_CrearAulaModal> {
 // MODAL: CREAR HORARIO
 // ─────────────────────────────────────────────────────────────────────────────
 class _CrearHorarioModal extends StatefulWidget {
-  const _CrearHorarioModal();
+  final _HorarioData? horarioActual;
+  final VoidCallback onGuardar;
+  const _CrearHorarioModal({this.horarioActual, required this.onGuardar});
 
   @override
   State<_CrearHorarioModal> createState() => _CrearHorarioModalState();
@@ -1372,6 +1976,24 @@ class _CrearHorarioModalState extends State<_CrearHorarioModal> {
   static const _semana = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.horarioActual != null) {
+      _profesorCtrl.text = widget.horarioActual!.profesor;
+      _materiaCtrl.text = widget.horarioActual!.materia;
+      _aulaCtrl.text = widget.horarioActual!.aula;
+      final horas = widget.horarioActual!.horario.split(' - ');
+      if (horas.length == 2) {
+        _inicioCtrl.text = horas[0];
+        _finCtrl.text = horas[1];
+      } else {
+        _inicioCtrl.text = widget.horarioActual!.horario;
+      }
+      _dias.add(_semana[0]); // Simple fallback to Monday
+    }
+  }
+
+  @override
   void dispose() {
     _profesorCtrl.dispose();
     _materiaCtrl.dispose();
@@ -1382,9 +2004,32 @@ class _CrearHorarioModalState extends State<_CrearHorarioModal> {
   }
 
   void _guardar() async {
-    if (_profesorCtrl.text.isEmpty) return;
+    if (_aulaCtrl.text.isEmpty || _inicioCtrl.text.isEmpty || _finCtrl.text.isEmpty) return;
     setState(() => _guardando = true);
-    await Future.delayed(const Duration(milliseconds: 800));
+    try {
+      final isEdit = widget.horarioActual != null;
+      final url = isEdit
+          ? '${dotenv.env['API_URL']}/api/schedules/${widget.horarioActual!.id}'
+          : '${dotenv.env['API_URL']}/api/schedules';
+      final request = isEdit ? http.put : http.post;
+
+      int dayOfWeek = 1;
+      if (_dias.isNotEmpty) {
+        dayOfWeek = _semana.indexOf(_dias.first) + 1;
+      }
+
+      await request(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'classroom': _aulaCtrl.text,
+          'dayOfWeek': dayOfWeek,
+          'startTime': _inicioCtrl.text,
+          'endTime': _finCtrl.text,
+        }),
+      );
+    } catch (_) {}
+    widget.onGuardar();
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -1422,15 +2067,15 @@ class _CrearHorarioModalState extends State<_CrearHorarioModal> {
                       color: Color(0xFF81C784), size: 22),
                 ),
                 const SizedBox(width: 12),
-                const Column(
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Crear Horario',
-                        style: TextStyle(
+                    Text(widget.horarioActual == null ? 'Crear Horario' : 'Editar Horario',
+                        style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
                             color: Color(0xFF1A1A2E))),
-                    Text('Asigna horario a un profesor',
+                    const Text('Asigna horario a un profesor',
                         style: TextStyle(
                             fontSize: 12, color: Color(0xFF8A93A8))),
                   ],
@@ -1798,6 +2443,819 @@ class _BotonGuardar extends StatelessWidget {
                       color: Colors.white,
                       fontWeight: FontWeight.w800,
                       fontSize: 15)),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB 5 — USUARIOS
+// ─────────────────────────────────────────────────────────────────────────────
+class _UsuarioData {
+  final String id;
+  final String email;
+  final String role;
+  final bool isActive;
+  _UsuarioData(this.id, this.email, this.role, this.isActive);
+}
+
+class _UsuariosTab extends StatefulWidget {
+  const _UsuariosTab({super.key});
+
+  @override
+  State<_UsuariosTab> createState() => _UsuariosTabState();
+}
+
+class _UsuariosTabState extends State<_UsuariosTab> {
+  List<_UsuarioData> _usuarios = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUsuarios();
+  }
+
+  Future<void> _fetchUsuarios() async {
+    try {
+      final res = await http.get(Uri.parse('${dotenv.env['API_URL']}/api/users'));
+      if (res.statusCode == 200) {
+        final List data = jsonDecode(res.body);
+        setState(() {
+          _usuarios = data.map((json) => _UsuarioData(
+                json['_id'] ?? '',
+                json['email'] ?? 'Sin Email',
+                json['role'] ?? 'Sin Rol',
+                json['isActive'] ?? true,
+              )).toList();
+          _isLoading = false;
+        });
+      } else {
+        setState(() => _isLoading = false);
+      }
+    } catch (_) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _eliminarUsuario(String id) async {
+    try {
+      await http.delete(Uri.parse('${dotenv.env['API_URL']}/api/users/$id'));
+      _fetchUsuarios();
+    } catch (_) {}
+  }
+
+  void _abrirCrearUsuario() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.45),
+      builder: (_) => _CrearUsuarioModal(
+        onGuardar: () => _fetchUsuarios(),
+      ),
+    );
+  }
+
+  void _abrirEditarUsuario(_UsuarioData usuario) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.45),
+      builder: (_) => _CrearUsuarioModal(
+        usuarioActual: usuario,
+        onGuardar: () => _fetchUsuarios(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          child: Row(
+            children: [
+              const Text('Usuarios',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1A1A2E))),
+              const Spacer(),
+              _AddButton(label: 'Crear usuario', onTap: _abrirCrearUsuario),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
+          child: Text('${_usuarios.length} cuentas registradas',
+              style: const TextStyle(color: Color(0xFF8A93A8), fontSize: 12)),
+        ),
+        Expanded(
+          child: _isLoading 
+            ? const Center(child: CircularProgressIndicator()) 
+            : _usuarios.isEmpty 
+              ? const Center(child: Text("No hay usuarios registrados", style: TextStyle(color: Color(0xFF8A93A8))))
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: _usuarios.length,
+                  itemBuilder: (_, i) => _UsuarioCard(
+                    data: _usuarios[i],
+                    onEdit: () => _abrirEditarUsuario(_usuarios[i]),
+                    onDelete: () => _eliminarUsuario(_usuarios[i].id),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _UsuarioCard extends StatelessWidget {
+  final _UsuarioData data;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  const _UsuarioCard({required this.data, required this.onEdit, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    Color getRoleColor(String r) {
+      if (r == 'admin') return const Color(0xFFE94560);
+      if (r == 'teacher') return const Color(0xFF4FC3F7);
+      if (r == 'student') return const Color(0xFF81C784);
+      return const Color(0xFF8A93A8);
+    }
+    
+    final color = getRoleColor(data.role);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 3))
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 50, height: 50,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(Icons.person_pin, color: color, size: 24),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(data.email,
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Color(0xFF1A1A2E))),
+                  const SizedBox(height: 3),
+                  _MiniChip(Icons.admin_panel_settings_outlined, data.role.toUpperCase(), color),
+                ],
+              ),
+            ),
+            Column(
+              children: [
+                _IconBtn(Icons.edit_rounded, const Color(0xFF4FC3F7), onEdit),
+                const SizedBox(height: 6),
+                _IconBtn(Icons.delete_rounded, const Color(0xFFE94560), onDelete),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CrearUsuarioModal extends StatefulWidget {
+  final _UsuarioData? usuarioActual;
+  final VoidCallback onGuardar;
+  const _CrearUsuarioModal({this.usuarioActual, required this.onGuardar});
+
+  @override
+  State<_CrearUsuarioModal> createState() => _CrearUsuarioModalState();
+}
+
+class _CrearUsuarioModalState extends State<_CrearUsuarioModal> {
+  final _emailCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+  final _roleCtrl = TextEditingController();
+  bool _guardando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.usuarioActual != null) {
+      _emailCtrl.text = widget.usuarioActual!.email;
+      _roleCtrl.text = widget.usuarioActual!.role;
+    }
+  }
+
+  void _guardar() async {
+    if (_emailCtrl.text.isEmpty || _roleCtrl.text.isEmpty) return;
+    if (widget.usuarioActual == null && _passCtrl.text.isEmpty) return; // Pass requires for new
+    setState(() => _guardando = true);
+    try {
+      final isEdit = widget.usuarioActual != null;
+      final url = isEdit
+          ? '${dotenv.env['API_URL']}/api/users/${widget.usuarioActual!.id}'
+          : '${dotenv.env['API_URL']}/api/users';
+      final request = isEdit ? http.put : http.post;
+
+      final body = {
+        'email': _emailCtrl.text,
+        'role': _roleCtrl.text.toLowerCase(),
+      };
+      if (_passCtrl.text.isNotEmpty) {
+        body['password'] = _passCtrl.text;
+      }
+
+      await request(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(body),
+      );
+    } catch (_) {}
+    widget.onGuardar();
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      padding: EdgeInsets.fromLTRB(24, 12, 24, 24 + bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20), decoration: BoxDecoration(color: const Color(0xFFE0E8F0), borderRadius: BorderRadius.circular(4)))),
+            Row(
+              children: [
+                Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF1A1A2E).withOpacity(0.1), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.admin_panel_settings_rounded, color: Color(0xFF1A1A2E), size: 22)),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.usuarioActual == null ? 'Nuevo Usuario' : 'Editar Usuario', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1A1A2E))),
+                    Text('Administrar credenciales y roles', style: const TextStyle(fontSize: 12, color: Color(0xFF8A93A8))),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _ModalField(controller: _emailCtrl, label: 'Email', hint: 'ej. juan@ubmv.edu', icon: Icons.email_outlined),
+            const SizedBox(height: 12),
+            _ModalField(controller: _roleCtrl, label: 'Rol', hint: 'admin | teacher | student', icon: Icons.admin_panel_settings_outlined),
+            const SizedBox(height: 12),
+            _ModalField(controller: _passCtrl, label: widget.usuarioActual == null ? 'Contraseña' : 'Nueva Contraseña (Opcional)', hint: '********', icon: Icons.lock_outline),
+            const SizedBox(height: 24),
+            _BotonGuardar(label: widget.usuarioActual == null ? 'Crear Usuario' : 'Actualizar Usuario', color: const Color(0xFF1A1A2E), guardando: _guardando, onTap: _guardar),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB 6 — MATERIAS
+// ─────────────────────────────────────────────────────────────────────────────
+class _MateriaData {
+  final String id;
+  final String nombre;
+  final String codigo;
+  final String carrera;
+  final int creditos;
+  final int cuatrimestre;
+  final bool isActive;
+  _MateriaData(this.id, this.nombre, this.codigo, this.carrera, this.creditos, this.cuatrimestre, this.isActive);
+}
+
+class _MateriasTab extends StatefulWidget {
+  const _MateriasTab({super.key});
+  @override
+  State<_MateriasTab> createState() => _MateriasTabState();
+}
+
+class _MateriasTabState extends State<_MateriasTab> {
+  List<_MateriaData> _materias = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchMaterias();
+  }
+
+  Future<void> _fetchMaterias() async {
+    try {
+      final res = await http.get(Uri.parse('${dotenv.env['API_URL']}/api/subjects'));
+      if (res.statusCode == 200) {
+        final List data = jsonDecode(res.body);
+        setState(() {
+          _materias = data.map((json) => _MateriaData(
+            json['_id'] ?? '',
+            json['nombre'] ?? 'Sin Nombre',
+            json['codigo'] ?? 'N/A',
+            json['carrera'] ?? 'Sin Carrera',
+            json['creditos'] ?? 0,
+            json['cuatrimestre'] ?? 1,
+            json['isActive'] ?? true,
+          )).toList();
+          _isLoading = false;
+        });
+      } else {
+        setState(() => _isLoading = false);
+      }
+    } catch (_) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _eliminarMateria(String id) async {
+    try {
+      await http.delete(Uri.parse('${dotenv.env['API_URL']}/api/subjects/$id'));
+      _fetchMaterias();
+    } catch (_) {}
+  }
+
+  void _abrirCrearMateria() {
+    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, barrierColor: Colors.black.withOpacity(0.45), builder: (_) => _CrearMateriaModal(onGuardar: () => _fetchMaterias()));
+  }
+
+  void _abrirEditarMateria(_MateriaData materia) {
+    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, barrierColor: Colors.black.withOpacity(0.45), builder: (_) => _CrearMateriaModal(materiaActual: materia, onGuardar: () => _fetchMaterias()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          child: Row(
+            children: [
+              const Text('Materias', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1A1A2E))),
+              const Spacer(),
+              _AddButton(label: 'Crear materia', onTap: _abrirCrearMateria),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
+          child: Text('${_materias.length} materias registradas', style: const TextStyle(color: Color(0xFF8A93A8), fontSize: 12)),
+        ),
+        Expanded(
+          child: _isLoading 
+            ? const Center(child: CircularProgressIndicator()) 
+            : _materias.isEmpty 
+              ? const Center(child: Text("No hay materias registradas", style: TextStyle(color: Color(0xFF8A93A8))))
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: _materias.length,
+                  itemBuilder: (_, i) => _MateriaCard(
+                    data: _materias[i],
+                    onEdit: () => _abrirEditarMateria(_materias[i]),
+                    onDelete: () => _eliminarMateria(_materias[i].id),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MateriaCard extends StatelessWidget {
+  final _MateriaData data;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  const _MateriaCard({required this.data, required this.onEdit, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 3))]),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 50, height: 50,
+              decoration: BoxDecoration(color: const Color(0xFF4FC3F7).withOpacity(0.12), borderRadius: BorderRadius.circular(14)),
+              child: const Icon(Icons.menu_book_rounded, color: Color(0xFF4FC3F7), size: 24),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(data.nombre, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Color(0xFF1A1A2E))),
+                  const SizedBox(height: 3),
+                  Text('${data.carrera} · Cuatrimestre ${data.cuatrimestre}', style: const TextStyle(color: Color(0xFF8A93A8), fontSize: 12)),
+                  const SizedBox(height: 6),
+                  _MiniChip(Icons.tag, data.codigo, const Color(0xFF4FC3F7)),
+                ],
+              ),
+            ),
+            Column(
+              children: [
+                _IconBtn(Icons.edit_rounded, const Color(0xFF4FC3F7), onEdit),
+                const SizedBox(height: 6),
+                _IconBtn(Icons.delete_rounded, const Color(0xFFE94560), onDelete),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CrearMateriaModal extends StatefulWidget {
+  final _MateriaData? materiaActual;
+  final VoidCallback onGuardar;
+  const _CrearMateriaModal({this.materiaActual, required this.onGuardar});
+  @override
+  State<_CrearMateriaModal> createState() => _CrearMateriaModalState();
+}
+
+class _CrearMateriaModalState extends State<_CrearMateriaModal> {
+  final _nombreCtrl = TextEditingController();
+  final _codigoCtrl = TextEditingController();
+  final _carreraCtrl = TextEditingController();
+  final _creditosCtrl = TextEditingController();
+  final _cuatrimestreCtrl = TextEditingController();
+  bool _guardando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.materiaActual != null) {
+      _nombreCtrl.text = widget.materiaActual!.nombre;
+      _codigoCtrl.text = widget.materiaActual!.codigo;
+      _carreraCtrl.text = widget.materiaActual!.carrera;
+      _creditosCtrl.text = widget.materiaActual!.creditos.toString();
+      _cuatrimestreCtrl.text = widget.materiaActual!.cuatrimestre.toString();
+    }
+  }
+
+  void _guardar() async {
+    if (_nombreCtrl.text.isEmpty || _codigoCtrl.text.isEmpty) return;
+    setState(() => _guardando = true);
+    try {
+      final isEdit = widget.materiaActual != null;
+      final url = isEdit ? '${dotenv.env['API_URL']}/api/subjects/${widget.materiaActual!.id}' : '${dotenv.env['API_URL']}/api/subjects';
+      final request = isEdit ? http.put : http.post;
+
+      await request(Uri.parse(url), headers: {'Content-Type': 'application/json'}, body: jsonEncode({
+        'nombre': _nombreCtrl.text,
+        'codigo': _codigoCtrl.text,
+        'carrera': _carreraCtrl.text,
+        'creditos': int.tryParse(_creditosCtrl.text) ?? 0,
+        'cuatrimestre': int.tryParse(_cuatrimestreCtrl.text) ?? 1,
+      }));
+    } catch (_) {}
+    widget.onGuardar();
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      padding: EdgeInsets.fromLTRB(24, 12, 24, 24 + bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20), decoration: BoxDecoration(color: const Color(0xFFE0E8F0), borderRadius: BorderRadius.circular(4)))),
+            Row(
+              children: [
+                Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF4FC3F7).withOpacity(0.1), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.menu_book_rounded, color: Color(0xFF4FC3F7), size: 22)),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.materiaActual == null ? 'Nueva Materia' : 'Editar Materia', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1A1A2E))),
+                    Text('Administrar catálogo de materias', style: const TextStyle(fontSize: 12, color: Color(0xFF8A93A8))),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _ModalField(controller: _nombreCtrl, label: 'Nombre', hint: 'ej. Matemáticas I', icon: Icons.text_fields),
+            const SizedBox(height: 12),
+            _ModalField(controller: _codigoCtrl, label: 'Código', hint: 'ej. MAT-101', icon: Icons.qr_code),
+            const SizedBox(height: 12),
+            _ModalField(controller: _carreraCtrl, label: 'Carrera', hint: 'ej. Ingeniería', icon: Icons.school),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: _ModalField(controller: _cuatrimestreCtrl, label: 'Cuatrimestre', hint: '1', icon: Icons.calendar_today, tipo: TextInputType.number)),
+                const SizedBox(width: 12),
+                Expanded(child: _ModalField(controller: _creditosCtrl, label: 'Créditos', hint: '5', icon: Icons.star_border, tipo: TextInputType.number)),
+              ],
+            ),
+            const SizedBox(height: 24),
+            _BotonGuardar(label: widget.materiaActual == null ? 'Crear Materia' : 'Actualizar Materia', color: const Color(0xFF4FC3F7), guardando: _guardando, onTap: _guardar),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB 7 — INSCRIPCIONES
+// ─────────────────────────────────────────────────────────────────────────────
+class _InscripcionData {
+  final String id;
+  final String studentId;
+  final String groupId;
+  final String studentName;
+  final String groupName;
+  final String status;
+  _InscripcionData(this.id, this.studentId, this.groupId, this.studentName, this.groupName, this.status);
+}
+
+class _InscripcionesTab extends StatefulWidget {
+  const _InscripcionesTab({super.key});
+  @override
+  State<_InscripcionesTab> createState() => _InscripcionesTabState();
+}
+
+class _InscripcionesTabState extends State<_InscripcionesTab> {
+  List<_InscripcionData> _inscripciones = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchInscripciones();
+  }
+
+  Future<void> _fetchInscripciones() async {
+    try {
+      final res = await http.get(Uri.parse('${dotenv.env['API_URL']}/api/enrollments'));
+      if (res.statusCode == 200) {
+        final List data = jsonDecode(res.body);
+        setState(() {
+          _inscripciones = data.map((json) => _InscripcionData(
+            json['_id'] ?? '',
+            json['studentId']?['_id'] ?? '',
+            json['groupId']?['_id'] ?? '',
+            json['studentId']?['nombre'] ?? 'Alumno Desconocido',
+            json['groupId']?['classroom'] ?? 'Aula Desconocida',
+            json['status'] ?? 'active',
+          )).toList();
+          _isLoading = false;
+        });
+      } else {
+        setState(() => _isLoading = false);
+      }
+    } catch (_) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _eliminar(String id) async {
+    try {
+      await http.delete(Uri.parse('${dotenv.env['API_URL']}/api/enrollments/$id'));
+      _fetchInscripciones();
+    } catch (_) {}
+  }
+
+  void _abrirCrear() {
+    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, barrierColor: Colors.black.withOpacity(0.45), builder: (_) => _CrearInscripcionModal(onGuardar: () => _fetchInscripciones()));
+  }
+
+  void _abrirEditar(_InscripcionData insc) {
+    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, barrierColor: Colors.black.withOpacity(0.45), builder: (_) => _CrearInscripcionModal(inscActual: insc, onGuardar: () => _fetchInscripciones()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          child: Row(
+            children: [
+              const Text('Inscripciones', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1A1A2E))),
+              const Spacer(),
+              _AddButton(label: 'Inscribir', onTap: _abrirCrear),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
+          child: Text('${_inscripciones.length} registros', style: const TextStyle(color: Color(0xFF8A93A8), fontSize: 12)),
+        ),
+        Expanded(
+          child: _isLoading 
+            ? const Center(child: CircularProgressIndicator()) 
+            : _inscripciones.isEmpty 
+              ? const Center(child: Text("No hay inscripciones registradas", style: TextStyle(color: Color(0xFF8A93A8))))
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: _inscripciones.length,
+                  itemBuilder: (_, i) => _InscripcionCard(
+                    data: _inscripciones[i],
+                    onEdit: () => _abrirEditar(_inscripciones[i]),
+                    onDelete: () => _eliminar(_inscripciones[i].id),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _InscripcionCard extends StatelessWidget {
+  final _InscripcionData data;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  const _InscripcionCard({required this.data, required this.onEdit, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 3))]),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 50, height: 50,
+              decoration: BoxDecoration(color: const Color(0xFF81C784).withOpacity(0.12), borderRadius: BorderRadius.circular(14)),
+              child: const Icon(Icons.assignment_ind_rounded, color: Color(0xFF81C784), size: 24),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(data.studentName, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Color(0xFF1A1A2E))),
+                  const SizedBox(height: 3),
+                  Text('Aula: ${data.groupName}', style: const TextStyle(color: Color(0xFF8A93A8), fontSize: 12)),
+                  const SizedBox(height: 6),
+                  _MiniChip(Icons.check_circle_outline, data.status.toUpperCase(), const Color(0xFF81C784)),
+                ],
+              ),
+            ),
+            Column(
+              children: [
+                _IconBtn(Icons.edit_rounded, const Color(0xFF4FC3F7), onEdit),
+                const SizedBox(height: 6),
+                _IconBtn(Icons.delete_rounded, const Color(0xFFE94560), onDelete),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CrearInscripcionModal extends StatefulWidget {
+  final _InscripcionData? inscActual;
+  final VoidCallback onGuardar;
+  const _CrearInscripcionModal({this.inscActual, required this.onGuardar});
+  @override
+  State<_CrearInscripcionModal> createState() => _CrearInscripcionModalState();
+}
+
+class _CrearInscripcionModalState extends State<_CrearInscripcionModal> {
+  String? _selectedStudent;
+  String? _selectedGroup;
+  List<dynamic> _students = [];
+  List<dynamic> _groups = [];
+  bool _isLoadingData = true;
+  bool _guardando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchData();
+  }
+
+  Future<void> _fetchData() async {
+    try {
+      final resS = await http.get(Uri.parse('${dotenv.env['API_URL']}/api/students'));
+      final resG = await http.get(Uri.parse('${dotenv.env['API_URL']}/api/groups'));
+      if (resS.statusCode == 200 && resG.statusCode == 200) {
+        setState(() {
+          _students = jsonDecode(resS.body);
+          _groups = jsonDecode(resG.body);
+          _isLoadingData = false;
+          if (widget.inscActual != null) {
+            final stExists = _students.any((s) => s['_id'] == widget.inscActual!.studentId);
+            final grExists = _groups.any((g) => g['_id'] == widget.inscActual!.groupId);
+            if (stExists) _selectedStudent = widget.inscActual!.studentId;
+            if (grExists) _selectedGroup = widget.inscActual!.groupId;
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  void _guardar() async {
+    if (_selectedStudent == null || _selectedGroup == null) return;
+    setState(() => _guardando = true);
+    try {
+      final isEdit = widget.inscActual != null;
+      final url = isEdit ? '${dotenv.env['API_URL']}/api/enrollments/${widget.inscActual!.id}' : '${dotenv.env['API_URL']}/api/enrollments';
+      final request = isEdit ? http.put : http.post;
+
+      await request(Uri.parse(url), headers: {'Content-Type': 'application/json'}, body: jsonEncode({
+        'studentId': _selectedStudent,
+        'groupId': _selectedGroup,
+        'status': 'active',
+      }));
+    } catch (_) {}
+    widget.onGuardar();
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  Widget _buildDropdown(String hint, List<dynamic> items, String? value, ValueChanged<String?> onChanged, String displayKey) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(color: const Color(0xFFF5F7FA), borderRadius: BorderRadius.circular(16)),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isExpanded: true,
+          hint: Text(hint, style: const TextStyle(color: Color(0xFF8A93A8))),
+          value: value,
+          onChanged: onChanged,
+          items: items.map<DropdownMenuItem<String>>((item) {
+            return DropdownMenuItem<String>(
+              value: item['_id'],
+              child: Text(item[displayKey] ?? 'Sin Nombre', style: const TextStyle(color: Color(0xFF1A1A2E), fontWeight: FontWeight.w600)),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      padding: EdgeInsets.fromLTRB(24, 12, 24, 24 + bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20), decoration: BoxDecoration(color: const Color(0xFFE0E8F0), borderRadius: BorderRadius.circular(4)))),
+            Row(
+              children: [
+                Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF81C784).withOpacity(0.1), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.assignment_ind_rounded, color: Color(0xFF81C784), size: 22)),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.inscActual == null ? 'Nueva Inscripción' : 'Editar Inscripción', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1A1A2E))),
+                    Text('Asignar alumno a grupo', style: const TextStyle(fontSize: 12, color: Color(0xFF8A93A8))),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            if (_isLoadingData)
+              const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
+            else ...[
+              const Text('Alumno', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+              const SizedBox(height: 8),
+              _buildDropdown('Seleccionar alumno', _students, _selectedStudent, (val) => setState(() => _selectedStudent = val), 'nombre'),
+              const SizedBox(height: 16),
+              const Text('Aula / Grupo', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+              const SizedBox(height: 8),
+              _buildDropdown('Seleccionar aula', _groups, _selectedGroup, (val) => setState(() => _selectedGroup = val), 'classroom'),
+              const SizedBox(height: 24),
+              _BotonGuardar(label: widget.inscActual == null ? 'Inscribir' : 'Actualizar', color: const Color(0xFF81C784), guardando: _guardando, onTap: _guardar),
+            ]
+          ],
         ),
       ),
     );

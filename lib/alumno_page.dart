@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/main.dart';
+import 'package:flutter_application_1/http_logger.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AlumnoPage extends StatefulWidget {
   final String role;
@@ -542,35 +545,66 @@ class _GridCardState extends State<_GridCard>
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 1 — MATERIAS
 // ─────────────────────────────────────────────────────────────────────────────
-class _MateriasTab extends StatelessWidget {
+class _MateriasTab extends StatefulWidget {
   const _MateriasTab({super.key});
 
-  static const _materias = [
-    _MateriaData('Matemáticas', 'Prof. García',
-        Icons.calculate_rounded, Color(0xFFF59E0B), '9.5',
-        'Lun / Mié / Vie', '08:00 – 09:30'),
-    _MateriaData('Español', 'Prof. Ramírez',
-        Icons.menu_book_rounded, Color(0xFF10B981), '8.8',
-        'Mar / Jue', '07:00 – 08:30'),
-    _MateriaData('Ciencias', 'Prof. López',
-        Icons.science_rounded, Color(0xFF4F8EF7), '9.0',
-        'Lun / Jue', '10:00 – 11:30'),
-    _MateriaData('Historia', 'Prof. Torres',
-        Icons.history_edu_rounded, Color(0xFF8B5CF6), '8.5',
-        'Mar / Vie', '11:00 – 12:30'),
-    _MateriaData('Inglés', 'Prof. Smith',
-        Icons.translate_rounded, Color(0xFFEC4899), '9.2',
-        'Lun / Mié', '13:00 – 14:00'),
-    _MateriaData('Educación Física', 'Prof. Morales',
-        Icons.directions_run_rounded, Color(0xFF06B6D4), '10',
-        'Vie', '14:00 – 15:00'),
-    _MateriaData('Arte', 'Prof. Vega',
-        Icons.palette_rounded, Color(0xFFFF6B35), '9.8',
-        'Mié', '15:00 – 16:00'),
-    _MateriaData('Computación', 'Prof. Núñez',
-        Icons.computer_rounded, Color(0xFF1A3C6E), '9.0',
-        'Jue', '16:00 – 17:00'),
-  ];
+  @override
+  State<_MateriasTab> createState() => _MateriasTabState();
+}
+
+class _MateriasTabState extends State<_MateriasTab> {
+  List<_MateriaData> _materias = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchMaterias();
+  }
+
+  Future<void> _fetchMaterias() async {
+    try {
+      String miStudentId = '';
+      final resS = await http.get(Uri.parse('${dotenv.env['API_URL']}/api/students'));
+      if (resS.statusCode == 200) {
+        final List students = jsonDecode(resS.body);
+        if (students.isNotEmpty) {
+          miStudentId = students[0]['_id'];
+        }
+      }
+
+      if (miStudentId.isNotEmpty) {
+        final resE = await http.get(Uri.parse('${dotenv.env['API_URL']}/api/enrollments'));
+        if (resE.statusCode == 200) {
+          final List enrollments = jsonDecode(resE.body);
+          final myEnrollments = enrollments.where((e) => e['studentId']?['_id'] == miStudentId).toList();
+          
+          setState(() {
+            _materias = myEnrollments.map((json) {
+              return _MateriaData(
+                json['groupId']?['groupCode'] ?? 'Materia General',
+                'Profesor Asignado',
+                Icons.book_rounded,
+                const Color(0xFF4F8EF7),
+                '9.0',
+                'Lunes a Viernes',
+                json['groupId']?['classroom'] ?? 'Aula Desconocida',
+              );
+            }).toList();
+            _isLoading = false;
+          });
+          return;
+        }
+      }
+      
+      setState(() {
+        _materias = [];
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -593,13 +627,16 @@ class _MateriasTab extends StatelessWidget {
                   color: Color(0xFF8A9BB8), fontSize: 12)),
         ),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
-            physics: const BouncingScrollPhysics(),
-            itemCount: _materias.length,
-            itemBuilder: (_, i) =>
-                _MateriaCard(data: _materias[i]),
-          ),
+          child: _isLoading 
+            ? const Center(child: CircularProgressIndicator()) 
+            : _materias.isEmpty 
+              ? const Center(child: Text("No tienes materias inscritas", style: TextStyle(color: Color(0xFF8A9BB8))))
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: _materias.length,
+                  itemBuilder: (_, i) => _MateriaCard(data: _materias[i]),
+                ),
         ),
       ],
     );

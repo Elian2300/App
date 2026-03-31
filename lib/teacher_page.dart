@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:flutter_application_1/http_logger.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_application_1/main.dart';
 import 'dart:convert';
 
@@ -34,7 +35,7 @@ class _TeacherPageState extends State<TeacherPage>
   late Animation<double> _fabAnimation;
 
   // ── URL API (sin cambios) ──────────────────────────────────────────────────
-  static const String _url = 'http://10.0.2.2:3000/api/students';
+  static String get _url => '${dotenv.env['API_URL']}/api/students';
 
   Future<void> _cargarAlumnos() async {
     setState(() {
@@ -187,7 +188,7 @@ class _TeacherPageState extends State<TeacherPage>
             )),
 
           if (_selectedTab == 1)
-            const Expanded(child: _ClasesPlaceholder()),
+            const Expanded(child: _AsistenciaTab()),
 
           if (_selectedTab == 2)
             const Expanded(child: _HorariosPlaceholder()),
@@ -386,7 +387,7 @@ class _TabBar extends StatelessWidget {
 
   static const _tabs = [
     ('Alumnos', Icons.people_alt_rounded),
-    ('Clases', Icons.menu_book_rounded),
+    ('Asistencia', Icons.checklist_rounded),
     ('Horarios', Icons.schedule_rounded),
   ];
 
@@ -814,34 +815,142 @@ class _Chip extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // PLACEHOLDERS: CLASES Y HORARIOS
 // ─────────────────────────────────────────────────────────────────────────────
-class _ClasesPlaceholder extends StatelessWidget {
-  const _ClasesPlaceholder();
+class _AsistenciaTab extends StatefulWidget {
+  const _AsistenciaTab({super.key});
+  @override
+  State<_AsistenciaTab> createState() => _AsistenciaTabState();
+}
+
+class _AsistenciaTabState extends State<_AsistenciaTab> {
+  List<dynamic> _alumnos = [];
+  Map<String, String> _asistencias = {}; // id -> status
+  bool _cargando = true;
+  bool _guardando = false;
+  String _groupId = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchData();
+  }
+
+  Future<void> _fetchData() async {
+    try {
+      final resS = await http.get(Uri.parse('${dotenv.env['API_URL']}/api/students'));
+      final resG = await http.get(Uri.parse('${dotenv.env['API_URL']}/api/groups'));
+      
+      if (resS.statusCode == 200 && resG.statusCode == 200) {
+        final List students = jsonDecode(resS.body);
+        final List groups = jsonDecode(resG.body);
+        
+        setState(() {
+          _alumnos = students;
+          _groupId = groups.isNotEmpty ? groups[0]['_id'] : '123456789012345678901234';
+          for (var s in students) {
+            _asistencias[s['_id']] = 'present'; // por defecto
+          }
+          _cargando = false;
+        });
+      }
+    } catch (_) {
+      setState(() => _cargando = false);
+    }
+  }
+
+  Future<void> _guardarAsistencia() async {
+    setState(() => _guardando = true);
+    try {
+      final date = DateTime.now().toIso8601String();
+      for (var s in _alumnos) {
+        await http.post(
+          Uri.parse('${dotenv.env['API_URL']}/api/attendance'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'date': date,
+            'groupId': _groupId,
+            'studentId': s['_id'],
+            'status': _asistencias[s['_id']],
+          })
+        );
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Asistencia guardada con éxito'), backgroundColor: Color(0xFF00C896)));
+      }
+    } catch (_) {}
+    setState(() => _guardando = false);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: const Color(0xFF00C896).withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.menu_book_rounded,
-                size: 44, color: Color(0xFF00C896)),
+    if (_cargando) return const Center(child: CircularProgressIndicator());
+    if (_alumnos.isEmpty) return const Center(child: Text("No hay alumnos registrados", style: TextStyle(color: Color(0xFF7A9189))));
+
+    return Column(
+      children: [
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            itemCount: _alumnos.length,
+            itemBuilder: (context, i) {
+              final a = _alumnos[i];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))]),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('${a['nombre']} ${a['apellido']}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Color(0xFF0D1F1A))),
+                          Text(a['matricula'] ?? 'Sin matrícula', style: const TextStyle(color: Color(0xFF7A9189), fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    _BotonEstado(icon: Icons.check, color: const Color(0xFF00C896), isSelected: _asistencias[a['_id']] == 'present', onTap: () => setState(() => _asistencias[a['_id']] = 'present')),
+                    const SizedBox(width: 8),
+                    _BotonEstado(icon: Icons.access_time_filled, color: const Color(0xFFF59E0B), isSelected: _asistencias[a['_id']] == 'late', onTap: () => setState(() => _asistencias[a['_id']] = 'late')),
+                    const SizedBox(width: 8),
+                    _BotonEstado(icon: Icons.close, color: const Color(0xFFE53935), isSelected: _asistencias[a['_id']] == 'absent', onTap: () => setState(() => _asistencias[a['_id']] = 'absent')),
+                  ],
+                ),
+              );
+            },
           ),
-          const SizedBox(height: 16),
-          const Text('Sin clases creadas aún',
-              style: TextStyle(
-                  color: Color(0xFF7A9189),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          const Text('Presiona "Crear Clase" para comenzar',
-              style: TextStyle(color: Color(0xFFB0C4BB), fontSize: 12)),
-        ],
+        ),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))]),
+          child: GestureDetector(
+            onTap: _guardando ? null : _guardarAsistencia,
+            child: Container(
+              width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 16),
+              decoration: BoxDecoration(color: _guardando ? const Color(0xFF00C896).withOpacity(0.5) : const Color(0xFF00C896), borderRadius: BorderRadius.circular(16)),
+              child: Center(child: _guardando ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Text('Guardar Asistencia', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15))),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BotonEstado extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final bool isSelected;
+  final VoidCallback onTap;
+  const _BotonEstado({required this.icon, required this.color, required this.isSelected, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(color: isSelected ? color : color.withOpacity(0.1), shape: BoxShape.circle),
+        child: Icon(icon, size: 18, color: isSelected ? Colors.white : color),
       ),
     );
   }
@@ -1009,8 +1118,17 @@ class _CrearClaseModalState extends State<_CrearClaseModal> {
   void _guardar() async {
     if (_nombreCtrl.text.isEmpty || _materiaCtrl.text.isEmpty) return;
     setState(() => _guardando = true);
-    // Aquí conectas con tu API para guardar la clase
-    await Future.delayed(const Duration(seconds: 1)); // simulación
+    try {
+      await http.post(
+        Uri.parse('${dotenv.env['API_URL']}/api/groups'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'groupCode': _gradoSeleccionado ?? 'N/A',
+          'classroom': _aulaCtrl.text,
+          'period': 'Actual',
+        }),
+      );
+    } catch (_) {}
     setState(() => _guardando = false);
     if (mounted) Navigator.of(context).pop();
   }
@@ -1200,7 +1318,18 @@ class _GenerarHorarioModalState extends State<_GenerarHorarioModal> {
   void _guardar() async {
     if (_nombreCtrl.text.isEmpty || _diasSeleccionados.isEmpty) return;
     setState(() => _guardando = true);
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      await http.post(
+        Uri.parse('${dotenv.env['API_URL']}/api/schedules'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'classroom': _nombreCtrl.text,
+          'startTime': _inicioCtrl.text,
+          'endTime': _finCtrl.text,
+          'dayOfWeek': 1,
+        }),
+      );
+    } catch (_) {}
     setState(() => _guardando = false);
     if (mounted) Navigator.of(context).pop();
   }
